@@ -13,6 +13,7 @@ import os
 from tabulate import tabulate
 from PIL import Image
 from PIL.ExifTags import TAGS
+import csv
 
 # END imports
 
@@ -20,17 +21,7 @@ from PIL.ExifTags import TAGS
 
 
 def process_image(image, name):
-    global show_images, STOP
-
-    # threshold1: This is the lower threshold for the hysteresis process.
-    # Any edges with an intensity gradient below this value are immediately discarded as non-edges.
-    # In other words, threshold1 is used to remove noise.
-    t1 = 19
-
-    # threshold2: This is the higher threshold for the hysteresis process.
-    # Any edges with an intensity gradient above this value are immediately considered as edges.
-    # So, threshold2 is used to define strong edges.
-    t2 = 30
+    global show_images, STOP, t1, t2,DP,MIN_DIST,PARAM1,PARAM2,MIN_RADIUS,MAX_RADIUS, contour_treshold
 
     #========= important stuff starts here *** =========
 
@@ -59,23 +50,23 @@ def process_image(image, name):
     # Loop through each detected contour.
     for contour in contours:
         # Check if the length (perimeter) of the contour is greater than a threshold (100 in this case).
-        if cv2.arcLength(contour, True) > 100:
+        if cv2.arcLength(contour, True) > contour_treshold:
             # Draw the contour on the filtered_edges image. The contour is filled with white (255).
             cv2.drawContours(filtered_edges, [contour], -1, (255), thickness=cv2.FILLED)
-
+        
+    #set these just so they exists
+    rightmost_point = (0,filtered_edges.shape[0])
+    leftmost_point = (0,0)
+    
     if "Center" in name: 
         # Use HoughCircles to detect circles in the edges image.
-        circles = cv2.HoughCircles(filtered_edges, cv2.HOUGH_GRADIENT, dp=1, minDist=90, param1=20, param2=10, minRadius=20, maxRadius=50)
-
-        # Flag to track if a half-circle was found
-        half_circle_found = False
+        circles = cv2.HoughCircles(filtered_edges, cv2.HOUGH_GRADIENT, dp=DP, minDist=MIN_DIST, param1=PARAM1, param2=PARAM2, minRadius=MIN_RADIUS, maxRadius=MAX_RADIUS)
 
         # Create a temporary image to draw the circles
         tmp_image = image.copy()
 
         # If some circles are detected, filter and draw them.
-        if circles is not None:
-            half_circle_found = True
+        if circles is not None: 
             circles = np.uint16(np.around(circles))
             
             # Sort circles based on x-coordinates
@@ -86,13 +77,10 @@ def process_image(image, name):
             rightmost_circle = sorted_circles[-1]
 
             for i in circles[0, :]:
-                # Check if the circle is in the upper half of the image
-                if i[1] < image.shape[0] / 2:
-                    # Draw the outer circle on the temporary image
-                    cv2.circle(tmp_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
-                    # Draw the center of the circle on the temporary image
-                    cv2.circle(tmp_image, (i[0], i[1]), 2, (0, 0, 255), 3)
-                    half_circle_found = True
+                # Draw the outer circle on the temporary image
+                cv2.circle(tmp_image, (i[0], i[1]), i[2], (0, 255, 0), 1)
+                # Draw the center of the circle on the temporary image
+                cv2.circle(tmp_image, (i[0], i[1]), 2, (0, 0, 255), 1)
 
             leftmost_point = (leftmost_circle[0] + leftmost_circle[2], leftmost_circle[1])
             rightmost_point = (rightmost_circle[0] - rightmost_circle[2], rightmost_circle[1])
@@ -102,21 +90,21 @@ def process_image(image, name):
             cv2.line(tmp_image, (rightmost_point[0], 0), (rightmost_point[0], image.shape[0]), (255, 0, 0), 2)
 
         # Print the result based on the flag
-        if half_circle_found and show_images:
-            print(f"Half-circle resembling a water droplet was successfully found in {name}.")
+        if circles is not None and show_images:
+            print(f"Middle diameter found in {name}.")
             plt.imshow(cv2.cvtColor(tmp_image, cv2.COLOR_BGR2RGB))
             plt.title(name)
             plt.show()
         elif (show_images):
-            print(f"No half-circle resembling a water droplet was found in {name}.")
+            print(f"No middle diameter found in {name}.")
 
     #========= important stuff ends here *** =========
     
     # If we are looking for the center return center distace. 
-    if "Center" in name and half_circle_found:
-        if rightmost_point[0] - leftmost_point[0] > 100: return 0
+    if "Center" in name:
+        if circles is None: return 0
+        elif rightmost_point[0] - leftmost_point[0] > 200: return 0
         else: return rightmost_point[0] - leftmost_point[0]
-
 
     count = 0
     # Binarize the *_edges matrix
@@ -150,7 +138,7 @@ def process_image(image, name):
         if STOP: 
             STOP = False
             return 0
-        print("Less than 20, retrying")
+        #print("Less than 20, retrying")
         image_top, image_bottom, image_center = cutted_picture(2) #2 = something else than 1, True for zooming
         if ("Top" in name):
             return process_image(image_top, name)
@@ -169,7 +157,6 @@ def process_image(image, name):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Draw vertical lines on the original image
-    # Convert to BGR for colored lines
     image_with_lines = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     cv2.line(image_with_lines, (first_column_with_one, 0),
              (first_column_with_one, image.shape[0]), (0, 0, 255), 1)
@@ -181,21 +168,16 @@ def process_image(image, name):
         output_dir, f'{name}_with_lines{filetype}'), image_with_lines)
 
     # Display the image with lines
-    # Convert to RGB for correct color display in matplotlib
     if (show_images):    
         plt.imshow(cv2.cvtColor(image_with_lines, cv2.COLOR_BGR2RGB))
         plt.title(name)
         plt.show()
 
     # Save the output image
-    cv2.imwrite(os.path.join(output_dir, f'{name}_edges{filetype}'), edges)
+    cv2.imwrite(os.path.join(output_dir, f'{name}_edges{filetype}'), filtered_edges)
 
     # Display the output image
-    #uncomment below plt.imshows to see what is happeinnng between the stars in the beginning of this function
     if (show_images):
-        #plt.imshow(edges, cmap='gray')
-        #plt.title(f'{name} Regualar edges')
-        #plt.show()
         plt.imshow(filtered_edges, cmap='gray')
         plt.title(f'{name} Dialated, Eroded and Filtered edges')
         plt.show()
@@ -209,7 +191,7 @@ def process_image(image, name):
 
 def cutted_picture(a):
     # these are global variables that we use for zooming
-    global show_images, STOP, orig_left_proportion, orig_top_proportion, orig_right_proportion, orig_bottom_proportion, reset_orig_left_proportion, reset_orig_top_proportion, reset_orig_right_proportion, reset_orig_bottom_proportion
+    global show_images, ROI_USED, STOP, orig_left_proportion, orig_top_proportion, orig_right_proportion, orig_bottom_proportion, reset_orig_left_proportion, reset_orig_top_proportion, reset_orig_right_proportion, reset_orig_bottom_proportion
 
     # Open the image
     image = Image.open(os.path.join(input_dir, bmp_file))
@@ -227,7 +209,8 @@ def cutted_picture(a):
     bottom_proportion = orig_bottom_proportion
 
     # Define crop proportions. These are shown as a green rectangle.
-    if a == 0 and bmp_file == bmp_files[0]:  # Only for the first image
+    if a == 0 and not ROI_USED:#bmp_file == bmp_files[0]:  # Only for the first image
+        ROI_USED = True
         # Convert PIL image to OpenCV format
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         
@@ -251,7 +234,7 @@ def cutted_picture(a):
         top_proportion = orig_top_proportion
         right_proportion = orig_right_proportion
         bottom_proportion = orig_bottom_proportion
-        print("Original corp")
+        #print("Original corp")
     
     # Check if zooming in will result in width or height less than 50 pixels
     elif width - 0.1 * image_width > 50 and height - 0.1 * image_height > 50:
@@ -271,31 +254,11 @@ def cutted_picture(a):
 
             bottom_proportion = orig_bottom_proportion - 0.05 # % from the top
             orig_bottom_proportion = bottom_proportion
-            print("Zooming in")
+            #print("Zooming in")
         else: 
             STOP = True
     else: 
         STOP = True
-
-        
-    #elif (orig_left_proportion - 0.05 > 0.0 
-    #      and orig_top_proportion - 0.05 > 0.0 
-    #      and orig_right_proportion + 0.05 < 1.0 
-    #      and orig_bottom_proportion + 0.05 < 1.0): 
-    #    # stop if some crop line hits a wall 
-    #
-    #    left_proportion = orig_left_proportion-0.05  # %from the left
-    #    orig_left_proportion = left_proportion  
-    #    
-    #    top_proportion = orig_top_proportion-0.05  # %from the top
-    #    orig_top_proportion = top_proportion  
-    #    
-    #    right_proportion = orig_right_proportion+0.05  # %from the left
-    #    orig_right_proportion = right_proportion 
-    #    
-    #    bottom_proportion = orig_bottom_proportion+0.05 # %from the top
-    #    orig_bottom_proportion = bottom_proportion
-    #    print("Zooming out")
 
     # Calculate actual pixel locations for cropping
     left = int(left_proportion * image.width)
@@ -325,14 +288,7 @@ def cutted_picture(a):
 
     # Save and display the split images
     #cv2.imwrite(os.path.join(output_dir, f'image_top{filetype}'), image_top)
-    #if (show_images):
-        #plt.imshow(cv2.cvtColor(image_top, cv2.COLOR_BGR2RGB))
-        #plt.show()
-
     #cv2.imwrite(os.path.join(output_dir, f'image_bottom{filetype}'), image_bottom)
-    #if (show_images):
-        #plt.imshow(cv2.cvtColor(image_bottom, cv2.COLOR_BGR2RGB))
-        #plt.show()
 
     return image_top, image_bottom, image_center
     # END cutted_picture
@@ -361,7 +317,7 @@ def get_roi(image):
 a = 0
 
 STOP = False
-
+ROI_USED = False
 show_images = True
 
 # original crop values, starting here zooming later
@@ -371,7 +327,7 @@ reset_orig_right_proportion = 0.80  # %from the left
 reset_orig_bottom_proportion = 0.80  # %from the top
 
 # 1
-input_dir = "./KasperiP/KP20230628_3/"  # This is your main folder
+input_dir = "./test"  # This is your main folder
 
 # 2
 output_dir = "outputimages"
@@ -379,12 +335,6 @@ os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
 
 # 3
 filetype = ".BMP"
-
-# Initialize lists to store data for the table
-file_names = []
-top_differences = []
-bottom_differences = []
-center_differences = []
 print(os.listdir(input_dir))
 
 # Get a list of all BMP files in the current directory
@@ -394,128 +344,175 @@ print("Starting to process images...")
 print("Number of images to precess:", len(bmp_files))
 print(bmp_files)
 
-# Process each BMP file
-for bmp_file in bmp_files:
+# Expanded threshold values
+t1_values = [15]
+t2_values = [45]
 
-    # Reset the values at the start of each loop
-    orig_left_proportion = reset_orig_left_proportion  # %from the left
-    orig_top_proportion = reset_orig_top_proportion  # %from the top
-    orig_right_proportion = reset_orig_right_proportion  # %from the left
-    orig_bottom_proportion = reset_orig_bottom_proportion  # %from the top
+contour_treshold_values = [90] 
 
-    # a for original start, False for no zooming yet # remember to add image_top, image_bottom if wanted and added above
-    image_top, image_bottom, image_center = cutted_picture(a) 
+# HoughCircles parameters
+DP_VALUES = [1]
+MIN_DIST_VALUES = [90]
+PARAM1_VALUES = [20]
+PARAM2_VALUES = [10]
+MIN_RADIUS_VALUES = [15]
+MAX_RADIUS_VALUES = [80]
 
-    # Process each image and store the differences
-    top_difference = process_image(image_top, f'{bmp_file} Top')
-    bottom_difference = process_image(image_bottom, f'{bmp_file} Bottom')
-    center_difference = process_image(image_center, f'{bmp_file} Center')
-    
-    # Add data to the lists
-    file_names.append(bmp_file)
-    center_differences.append(center_difference)
-    top_differences.append(top_difference)
-    bottom_differences.append(bottom_difference)
+# Calculate the total number of combinations
+number_of_combinations = (len(t1_values) * len(t2_values) * len(DP_VALUES) * len(MIN_DIST_VALUES) *
+                          len(PARAM1_VALUES) * len(PARAM2_VALUES) * len(MIN_RADIUS_VALUES) * len(MAX_RADIUS_VALUES))
 
-print("Done with processing images")
-# END main
+print(f"Total number of combinations: {number_of_combinations}")
+# List to store results
+results = []
+
+i = 0
+
+for t1_item in t1_values:
+    for t2_item in t2_values:
+        for DP in DP_VALUES:
+            for MIN_DIST in MIN_DIST_VALUES:
+                for PARAM1 in PARAM1_VALUES:
+                    for PARAM2 in PARAM2_VALUES:
+                        for MIN_RADIUS in MIN_RADIUS_VALUES:
+                            for MAX_RADIUS in MAX_RADIUS_VALUES:
+                                for contour_treshold in contour_treshold_values:   
+                                    # Process each BMP file
+                                    i += 1
+                                    # Initialize lists to store data for the table
+                                    file_names = []
+                                    top_differences = []
+                                    bottom_differences = []
+                                    center_differences = []
+                                    
+                                    t1 = t1_item
+                                    t2 = t2_item
+
+                                    DP = 1
+                                    MIN_DIST = 90
+                                    PARAM1 = 20
+                                    PARAM2 = 10
+                                    MIN_RADIUS = 15
+                                    MAX_RADIUS = 80
+
+                                    for bmp_file in bmp_files:
+
+                                        # Reset the values at the start of each loop
+                                        orig_left_proportion = reset_orig_left_proportion  # %from the left
+                                        orig_top_proportion = reset_orig_top_proportion  # %from the top
+                                        orig_right_proportion = reset_orig_right_proportion  # %from the left
+                                        orig_bottom_proportion = reset_orig_bottom_proportion  # %from the top
+
+                                        # a for original start, False for no zooming yet # remember to add image_top, image_bottom if wanted and added above
+                                        image_top, image_bottom, image_center = cutted_picture(a) 
+
+                                        # Process each image and store the differences
+                                        top_difference = process_image(image_top, f'{bmp_file} Top')
+                                        bottom_difference = process_image(image_bottom, f'{bmp_file} Bottom')
+                                        center_difference = process_image(image_center, f'{bmp_file} Center')
+                                        
+                                        # Add data to the lists
+                                        file_names.append(bmp_file)
+                                        center_differences.append(center_difference)
+                                        top_differences.append(top_difference)
+                                        bottom_differences.append(bottom_difference)
+
+                                    print("Done with processing images")
+                                    # END main
 
 
-#=========================table generation STARTS HERE=========================================================================
+                                    #=========================table generation STARTS HERE=========================================================================
 
 
-kerroin = 11.1/1032
+                                    kerroin = 11.1/1032
 
-top_differences = [
-    kerroin * x if x is not None else 0 for x in top_differences]
-bottom_differences = [
-    kerroin * x if x is not None else 0 for x in bottom_differences]
-center_differences = [
-    kerroin * x if x is not None else 0 for x in center_differences]
+                                    top_differences = [
+                                        kerroin * x if x is not None else 0 for x in top_differences]
+                                    bottom_differences = [
+                                        kerroin * x if x is not None else 0 for x in bottom_differences]
+                                    center_differences = [
+                                        kerroin * x if x is not None else 0 for x in center_differences]
 
-# Create a dictionary to associate file names with data dictionaries
-file_data = {}
+                                    # Create a dictionary to associate file names with data dictionaries
+                                    file_data = {}
 
-# Populate the file_data dictionary
-for file_name, d1, d2, d3 in zip(file_names, top_differences, bottom_differences, center_differences):
-    file_data[file_name] = {"top_differences": d1, "bottom_differences": d2, "Center difference": d3}
+                                    # Populate the file_data dictionary
+                                    for file_name, d1, d2, d3 in zip(file_names, top_differences, bottom_differences, center_differences):
+                                        file_data[file_name] = {"top_differences": d1, "bottom_differences": d2, "Center difference": d3}
 
-# Sort the file names
-sorted_file_names = sorted(file_names)
+                                    # Sort the file names
+                                    sorted_file_names = sorted(file_names)
 
-# Access the sorted file names and their corresponding data
-for file_name in sorted_file_names:
-    data_dict = file_data[file_name]
+                                    # Access the sorted file names and their corresponding data
+                                    for file_name in sorted_file_names:
+                                        data_dict = file_data[file_name]
 
-# Create a list to store the table rows
-table = []
+                                    # Create a list to store the table rows
+                                    table = []
 
-# Populate the table rows
-for file_name, d1, d2, d3 in zip(file_names, top_differences, bottom_differences, center_differences):
-    table.append([file_name, d1, d2, d3])
+                                    # Populate the table rows
+                                    for file_name, d1, d2, d3 in zip(file_names, top_differences, bottom_differences, center_differences):
+                                        table.append([file_name, d1, d2, d3])
 
-# Sort the table rows based on the file names
-sorted_table = sorted(table, key=lambda x: x[0])
+                                    # Sort the table rows based on the file names
+                                    sorted_table = sorted(table, key=lambda x: x[0])
 
-# Generate the table
-headers = ["File Name", "Top Difference", "Bottom Difference", "Center difference"]
-table_str = tabulate(sorted_table, headers, tablefmt="grid")
+                                    # Generate the table
+                                    headers = ["File Name", "Top Difference", "Bottom Difference", "Center difference"]
+                                    table_str = tabulate(sorted_table, headers, tablefmt="grid")
 
-# Print the table
-print(table_str)
+                                    # Print the table
+                                    print(table_str)
 
-# Assuming you have the lists top_differences, bottom_differences, center_differences, and file_names defined as in your code
+                                    print("Combinations done:", str(i) + " / " + str(number_of_combinations))
+                                    print("Percentage:", i/number_of_combinations)
+                                    # Assuming you have the lists top_differences, bottom_differences, center_differences, and file_names defined as in your code
+                                    # Read the test.csv file
+                                    test_table = []
+                                    with open('test.csv', 'r') as csvfile:
+                                        reader = csv.reader(csvfile)
+                                        for row in reader:
+                                            test_table.append(row)
 
+                                    # Compare the cells and count the matches
+                                    count_matches = 0
+                                    total_cells = 0
+                                    for (test_row, result_row) in zip(test_table[1:], sorted_table):  # Skip the header row in test_table
+                                        for (test_value, result_value) in zip(test_row[1:], result_row[1:]):  # Skip the file name column
+                                            total_cells += 1
+                                            if abs(float(test_value) - float(result_value)) <= 0.2:
+                                                count_matches += 1
 
-# Plotting the data
-plt.figure(figsize=(15, 6))  # Adjusted width to 15 units
-plt.plot(file_names, top_differences, label='Top Differences', marker='o')
-plt.plot(file_names, bottom_differences, label='Bottom Differences', marker='o')
-plt.plot(file_names, center_differences, label='Center Differences', marker='o')
+                                    # Calculate the percentage
+                                    percentage_matches = (count_matches / total_cells) * 100
+                                    results.append((t1_item, t2_item, DP, MIN_DIST, PARAM1, PARAM2, MIN_RADIUS, MAX_RADIUS, contour_treshold, percentage_matches))
 
-# Adding labels and title
-plt.xlabel('File Name/Time/Item')
-plt.ylabel('Difference Value')
-plt.title('Differences vs File Name')
-plt.xticks(rotation=45)  # Rotate x-axis labels for better readability
-plt.legend()  # Display the legend
+                                    if percentage_matches > 70:
+                                        print(f"\033[92m\n\n{percentage_matches:.2f}% of the cells were within a 0.2 range of the test value.\n\n\033[0m")  # Green
+                                    else:
+                                        print(f"\033[91m\n\n{percentage_matches:.2f}% of the cells were within a 0.2 range of the test value.\n\n\033[0m")  # Red
+                            
+                                    # Plotting the data
+                                    '''
+                                    plt.figure(figsize=(15, 6))  # Adjusted width to 15 units
+                                    plt.plot(file_names, top_differences, label='Top Differences', marker='o')
+                                    plt.plot(file_names, bottom_differences, label='Bottom Differences', marker='o')
+                                    plt.plot(file_names, center_differences, label='Center Differences', marker='o')
 
-# Display the plot
-plt.tight_layout()
-plt.grid(True)
-plt.show()
+                                    # Adding labels and title
+                                    plt.xlabel('File Name/Time/Item')
+                                    plt.ylabel('Difference Value')
+                                    plt.title('Differences vs File Name')
+                                    plt.xticks(rotation=45)  # Rotate x-axis labels for better readability
+                                    plt.legend()  # Display the legend
 
-def moving_average(data, window_size=3):
-    """Compute moving average."""
-    return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
+                                    # Display the plot
+                                    plt.tight_layout()
+                                    plt.grid(True)
+                                    plt.show()
+                                    #END table generation
+                                    '''
 
-# Define a window size for the moving average
-window = 5
-
-# Compute moving averages
-smoothed_top = moving_average(top_differences, window)
-smoothed_bottom = moving_average(bottom_differences, window)
-smoothed_center = moving_average(center_differences, window)
-
-# Adjust file names for the reduced size after moving average
-smoothed_file_names = file_names[window-1:]
-
-# Plotting the data
-plt.figure(figsize=(15, 6))
-plt.plot(smoothed_file_names, smoothed_top, label='Smoothed Top Differences', marker='o')
-plt.plot(smoothed_file_names, smoothed_bottom, label='Smoothed Bottom Differences', marker='o')
-plt.plot(smoothed_file_names, smoothed_center, label='Smoothed Center Differences', marker='o')
-
-# Adding labels and title
-plt.xlabel('File Name/Time/Item')
-plt.ylabel('Difference Value')
-plt.title('Smoothed Differences vs File Name')
-plt.xticks(rotation=45)  # Rotate x-axis labels for better readability
-plt.legend()  # Display the legend
-
-# Display the plot
-plt.tight_layout()
-plt.grid(True)
-plt.show()
-
-#END table generation
+# Display results and identify the best parameters
+best_parameters = max(results, key=lambda x: x[9])  # Adjusted index to 8 for the percentage match
+print(f"Best parameters: t1 = {best_parameters[0]}, t2 = {best_parameters[1]}, DP = {best_parameters[2]}, MIN_DIST = {best_parameters[3]}, PARAM1 = {best_parameters[4]}, PARAM2 = {best_parameters[5]}, MIN_RADIUS = {best_parameters[6]}, MAX_RADIUS = {best_parameters[7]}, contour_treshold = {best_parameters[8]} with {best_parameters[9]:.2f}% match.")
