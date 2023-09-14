@@ -3,6 +3,27 @@
 
 This script processes a set of BMP images to detect specific features and patterns. It uses various image processing techniques, such as edge detection, dilation, erosion, and contour detection, to analyze the images. The results are then tabulated and visualized using plots.
 
+## Example Images
+
+Here are some example images from the `exampleimages` folder:
+
+- Crop the image
+
+![Crop the image](./exampleimages/crop.png)
+
+- Extract edges
+
+![Extract edges](./exampleimages/gradient.png)
+
+- Measure diameter from top (and bottom)
+
+![Measure diameter from top (and bottom)](./exampleimages/distance.png)
+
+- Measure diameter from center
+
+![Measure diameter from center](./exampleimages/middlediameter.png)
+
+
 ## Dependencies
 ```
 OpenCV (cv2)
