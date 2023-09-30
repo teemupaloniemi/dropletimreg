@@ -76,8 +76,8 @@ def detect_edges(img):
         if (center_difference < 10 or center_difference > 200): 
             center_difference = -1
         # Draw vertical lines on the edges of the leftmost and rightmost circles
-        cv2.line(ret_filtered_edges, (leftmost_point[0], 0), (leftmost_point[0], filtered_edges.shape[0]), (255, 0, 0), 2)
-        cv2.line(ret_filtered_edges, (rightmost_point[0], 0), (rightmost_point[0], filtered_edges.shape[0]), (255, 0, 0), 2)
+        cv2.line(ret_filtered_edges, (leftmost_point[0], filtered_edges.shape[0]//3), (leftmost_point[0], 2*(filtered_edges.shape[0]//3)), (255, 0, 0), 2)
+        cv2.line(ret_filtered_edges, (rightmost_point[0], filtered_edges.shape[0]//3), (rightmost_point[0], 2*(filtered_edges.shape[0]//3)), (255, 0, 0), 2)
 
 
     img_top = filtered_edges[:filtered_edges.shape[0]//2, :]
@@ -87,13 +87,13 @@ def detect_edges(img):
     bottom_difference, first_column_with_one_bottom, last_column_with_one_bottom = calculate_width(img_bottom)
 
     cv2.line(ret_filtered_edges, (first_column_with_one_top, 0),
-             (first_column_with_one_top, filtered_edges.shape[0]), (0, 0, 255), 1)
+             (first_column_with_one_top, filtered_edges.shape[0]//2), (0, 0, 255), 1)
     cv2.line(ret_filtered_edges, (last_column_with_one_top, 0),
-             (last_column_with_one_top, filtered_edges.shape[0]), (0, 0, 255), 1)
+             (last_column_with_one_top, filtered_edges.shape[0]//2), (0, 0, 255), 1)
 
-    cv2.line(ret_filtered_edges, (first_column_with_one_bottom, 0),
+    cv2.line(ret_filtered_edges, (first_column_with_one_bottom, filtered_edges.shape[0]//2),
              (first_column_with_one_bottom, filtered_edges.shape[0]), (0,255,255), 1)
-    cv2.line(ret_filtered_edges, (last_column_with_one_bottom, 0),
+    cv2.line(ret_filtered_edges, (last_column_with_one_bottom, filtered_edges.shape[0]//2),
              (last_column_with_one_bottom, filtered_edges.shape[0]), (0,255,255), 1)
 
     return ret_filtered_edges, top_difference, bottom_difference, center_difference
@@ -206,6 +206,6 @@ for root, subFolders, files in os.walk(rootdir):
         content.sort()
         orb = cv2.ORB_create()
         main(content)
-        top_values = []
-        bottom_values = []
-        center_values = []
+        top_values = [0]
+        bottom_values = [0]
+        center_values = [0]
