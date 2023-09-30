@@ -3,6 +3,7 @@ import os
 from os import listdir
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
 
 def extract(img): 
     #get feats
@@ -119,7 +120,7 @@ def calculate_width(img):
     return last_column_with_one - first_column_with_one, first_column_with_one, last_column_with_one
 
 def process_frame(img): 
-    global roiselected,left,right,top,bottom
+    global roiselected,left,right,top,bottom,top_values, bottom_values, center_values
 
     #load image
     orig = cv2.imread(img) 
@@ -146,12 +147,38 @@ def process_frame(img):
     #for p in kps:
         #x,y = map(lambda x: int(round(x)), p.pt)
         #cv2.circle(filtered, (x,y), color=(0,255,0), radius=2)  
+    imgs = np.concatenate((orig, filtered), axis=1) 
+
+    if (showPlot): 
+        plt.plot(top_values, color="red", label="Top Diffs")
+        plt.plot(bottom_values, color="yellow", label="Bottom Diffs")
+        plt.plot(center_values, color="blue", label="Center Diffs")
+
+        # Save the plot as a temporary image
+        plt.savefig("plot.png", bbox_inches='tight', pad_inches=0)  # Remove padding
+        plt.close()  # Close the plot window
+
+        # Load the saved plot image
+        plot_img = cv2.imread("plot.png")
+
+        # Resize plot_img to have the same width as imgs
+        plot_img_resized = cv2.resize(plot_img, (imgs.shape[1], 400))  # Assume desired height is 100
+
+        # Concatenate imgs and plot_img_resized along height (axis=0)
+        imgs = np.concatenate((imgs, plot_img_resized), axis=0)
     
     #show image
-    cv2.imshow("Features", filtered)
+    cv2.imshow("Processing", imgs)
+    cv2.setMouseCallback('Processing', click_event)
     cv2.waitKey(10) 
 
     return top_difference, bottom_difference, center_difference
+
+def click_event(event, x, y, flags, params):
+    global showPlot
+    if event == cv2.EVENT_LBUTTONDOWN:
+        showPlot = not showPlot
+        print("showPlot", showPlot)
 
 
 def get_roi(img):
@@ -184,10 +211,6 @@ def main(data):
                 center_values.append(center_values[-1])
             else:
                 center_values.append(center_difference)
-            plt.plot(top_values, color="red", label="Top Diffs")
-            plt.plot(bottom_values, color="yellow", label="Bottom Diffs")
-            plt.plot(center_values, color="blue", label="Center Diffs")
-            plt.pause(0.0001)
 
 rootdir = "/home/binaryblaze/Desktop/KasperiP"
 roiselected = False
@@ -198,9 +221,11 @@ bottom = 0
 top_values = [0]
 bottom_values = [0]
 center_values = [0]
+showPlot = True
 for root, subFolders, files in os.walk(rootdir):
     for folder in subFolders:
         roiselected = False
+        showPlot = True
         folder_dir = rootdir + "/" + folder
         content = os.listdir(folder_dir)
         content.sort()
