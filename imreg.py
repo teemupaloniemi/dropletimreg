@@ -4,6 +4,7 @@ from os import listdir
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
+import pandas as pd
 
 def extract(img): 
     #get feats
@@ -231,6 +232,8 @@ for root, subFolders, files in os.walk(rootdir):
         content.sort()
         orb = cv2.ORB_create()
         main(content)
+        df = pd.DataFrame([content, top_values, bottom_values, center_values])
+        df.to_csv(folder+"_results.csv")
         top_values = [0]
         bottom_values = [0]
         center_values = [0]
